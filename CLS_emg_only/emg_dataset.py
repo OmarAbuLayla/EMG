@@ -51,8 +51,12 @@ def EMG_MFSC(x):
     x: shape (1, timepoints, NC)
     Returns: normalized MFSC features, shape (samples, channels, 36, 36)
     """
-    # Trim first 250 samples (as in original code)
-    x = x[:, 250:, :]
+    # Trim first 250 samples (as in original code) only when we have enough
+    # context. Some recordings are shorter than 250 samples and blindly
+    # slicing would drop the entire signal which later produces all-zero
+    # spectrograms.
+    if x.shape[1] > 250:
+        x = x[:, 250:, :]
 
     n_mels = 36
     sr = 1000
@@ -182,7 +186,31 @@ class MyDataset():
 
     def __getitem__(self, idx):
         emg = sio.loadmat(self.file_list[idx][1])
-        emg = np.expand_dims(emg["data"], axis=0)
+        emg = np.asarray(emg["data"])
+
+        # Ensure the EMG tensor has shape (1, timepoints, channels). Some
+        # stored files are already in that layout, while others might be
+        # squeezed to (timepoints, channels). Creating an unconditional extra
+        # axis here used to produce a shape of (1, 1, timepoints, channels),
+        # which in turn caused the MFSC extractor to slice away the entire
+        # sequence. We instead normalise to a single leading sample axis.
+        if emg.ndim > 3:
+            raise ValueError(f"Unexpected EMG array shape {emg.shape}")
+
+        if emg.ndim == 3:
+            if emg.shape[0] != 1:
+                # Collapse possible singleton dimensions and rebuild the
+                # expected layout.
+                emg = np.squeeze(emg)
+        if emg.ndim == 2:
+            emg = np.expand_dims(emg, axis=0)
+        elif emg.ndim == 1:
+            # Extremely short recordings fall back to a single channel.
+            emg = emg.reshape(1, -1, 1)
+
+        if emg.ndim != 3 or emg.shape[0] != 1:
+            raise ValueError(f"Unable to coerce EMG array to (1, T, C); got {emg.shape}")
+
         emg = filter(emg)
         emg = EMG_MFSC(emg)
         label = int(self.file_list[idx][0])

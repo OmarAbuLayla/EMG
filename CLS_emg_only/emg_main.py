@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torch.autograd import Variable
 from lr_scheduler import *
 from emg_model import *
 from emg_dataset import *
@@ -71,12 +70,10 @@ def train_test(model, dset_loaders, criterion, epoch, phase, optimizer, args, lo
     if phase == 'train':
         for batch_idx, (inputs, targets) in enumerate(dset_loaders[phase]):
             #print(f"\n[DEBUG] Original batch shape before reshape: {inputs.shape}")  # ADDED FOR CHANNELS
-            inputs = inputs.reshape(inputs.shape[0], inputs.shape[2], inputs.shape[3], -1)
-            #print(f"[DEBUG] After reshape: {inputs.shape}") # ADDED FOR CHANNELS
-            inputs = inputs.float()
-            inputs,  targets = Variable(inputs.cuda()), Variable(targets.cuda())
-            inputs = inputs.cuda()
-            targets = targets.cuda()
+            inputs = inputs.squeeze(1).float()
+            targets = targets.long()
+            inputs = inputs.to(device)
+            targets = targets.to(device)
             outputs = model(inputs)
             if args.every_frame:
                 outputs = torch.mean(outputs, 1)
@@ -112,11 +109,10 @@ def train_test(model, dset_loaders, criterion, epoch, phase, optimizer, args, lo
     if phase == 'val' or phase == 'test':
         with torch.no_grad():
             for batch_idx, (inputs, targets) in enumerate(dset_loaders[phase]):
-                inputs = inputs.reshape(inputs.shape[0], inputs.shape[2], inputs.shape[3], -1)
-                inputs = inputs.float()
-                inputs,  targets = Variable(inputs.cuda()), Variable(targets.cuda())
-                inputs = inputs.cuda()
-                targets = targets.cuda()
+                inputs = inputs.squeeze(1).float()
+                targets = targets.long()
+                inputs = inputs.to(device)
+                targets = targets.to(device)
                 outputs = model(inputs)
                 if args.every_frame:
                     outputs = torch.mean(outputs, 1)
