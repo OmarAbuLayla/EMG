@@ -1,0 +1,4 @@
+train from scratch
+----------
+Epoch 0/19
+Current Learning rate: [0.0008]
