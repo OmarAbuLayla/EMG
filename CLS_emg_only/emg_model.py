@@ -3,7 +3,6 @@ import math
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -104,7 +103,7 @@ class GRU(nn.Module):
         self.fc = nn.Linear(hidden_size*2, num_classes)
 
     def forward(self, x):
-        h0 = Variable(torch.zeros(self.num_layers*2, x.size(0), self.hidden_size))
+        h0 = x.new_zeros(self.num_layers * 2, x.size(0), self.hidden_size)
         out, _ = self.gru(x, h0)
         if self.every_frame:
             out = self.fc(out)  # predicitions based on every time step
