@@ -8,10 +8,10 @@ from itertools import combinations
 # CONFIGURATION
 # =============================
 original_root = r"C:\Users\ompis\Desktop\work GJU\Codes\AVE-Speech"
-treated_root  = r"D:\Omar\AVE-Speech_treated_few_channels_noNorm"
+treated_root  = r"D:\Omar\AVE-Speech_treated_15VC_noNorm"
 
 sets = ["Train", "Val", "Test"]
-N_KEEP = 8  # number of virtual channels to keep
+N_KEEP = None  # None means keep ALL combinations (15 for 6 electrodes)
 
 # =============================
 # FUNCTION TO CREATE VIRTUAL CHANNELS (NO NORMALIZATION)
@@ -19,8 +19,8 @@ N_KEEP = 8  # number of virtual channels to keep
 def create_virtual_channels(emg):
     """
     Create virtual EMG channels (NO NORMALIZATION)
-    1. Compute all pairwise virtual channels: max(channel_i, channel_j) - min(channel_i, channel_j)
-    2. Keep the top N_KEEP channels based on variance (raw amplitude preserved)
+    Computes all pairwise differences: max(channel_i, channel_j) - min(channel_i, channel_j)
+    and optionally keeps top N_KEEP channels by variance.
     """
     NC = emg.shape[2]
     virtual_list = []
@@ -30,12 +30,13 @@ def create_virtual_channels(emg):
         virtual_ch = np.maximum(emg[:, :, i], emg[:, :, j]) - np.minimum(emg[:, :, i], emg[:, :, j])
         virtual_list.append(virtual_ch)
 
-    emg_virtual = np.stack(virtual_list, axis=2)
+    emg_virtual = np.stack(virtual_list, axis=2)  # shape: (1, time, 15)
 
-    # Step 2: keep top N_KEEP by variance
-    variances = np.var(emg_virtual, axis=(0, 1))
-    top_indices = np.argsort(variances)[-N_KEEP:]
-    emg_virtual = emg_virtual[:, :, top_indices]
+    # Step 2: if N_KEEP is specified, keep top N_KEEP by variance
+    if N_KEEP is not None and N_KEEP < emg_virtual.shape[2]:
+        variances = np.var(emg_virtual, axis=(0, 1))
+        top_indices = np.argsort(variances)[-N_KEEP:]
+        emg_virtual = emg_virtual[:, :, top_indices]
 
     return emg_virtual
 
@@ -50,16 +51,16 @@ for dataset in sets:
         print(f"[WARNING] Original path does not exist: {original_set_path}")
         continue
 
-    subjects = sorted([s for s in os.listdir(original_set_path) if os.path.isdir(os.path.join(original_set_path, s))])
+    subjects = sorted([s for s in os.listdir(original_set_path)
+                       if os.path.isdir(os.path.join(original_set_path, s))])
 
     for subj in subjects:
-        sessions = sorted([
-            sess for sess in os.listdir(os.path.join(original_set_path, subj))
-            if os.path.isdir(os.path.join(original_set_path, subj, sess))
-        ])
+        sessions = sorted([sess for sess in os.listdir(os.path.join(original_set_path, subj))
+                           if os.path.isdir(os.path.join(original_set_path, subj, sess))])
 
         for sess in sessions:
-            files = [f for f in os.listdir(os.path.join(original_set_path, subj, sess)) if f.endswith(".mat")]
+            files = [f for f in os.listdir(os.path.join(original_set_path, subj, sess))
+                     if f.endswith(".mat")]
             for file in files:
                 original_file_path = os.path.join(original_set_path, subj, sess, file)
                 mat = sio.loadmat(original_file_path)
@@ -78,6 +79,6 @@ for dataset in sets:
                 treated_file_path = os.path.join(treated_root, dataset, "EMG", subj, sess, file)
                 os.makedirs(os.path.dirname(treated_file_path), exist_ok=True)
                 sio.savemat(treated_file_path, {"data": emg_virtual})
-                print(f"[DEBUG] Saved treated file (8 channels, no normalization): {treated_file_path}")
+                print(f"[DEBUG] Saved treated file ({emg_virtual.shape[2]} channels, no normalization): {treated_file_path}")
 
 print("\n✅ All sets processed! Virtual channels created and saved in:", treated_root)
