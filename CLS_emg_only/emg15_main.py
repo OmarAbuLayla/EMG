@@ -1,4 +1,4 @@
-"""Training entry point for the transformer-based 15-channel EMG model."""
+"""Training entry point for the 15-channel EMG model."""
 from __future__ import annotations
 
 import argparse
@@ -13,12 +13,12 @@ import torch
 import torch.nn as nn
 from torch import amp
 
-from emg_dataset_transformer import MFSCConfig, build_dataloaders
-from emg_model_transformer import EMGTransformer15
+from emg15_dataset import MFSCConfig, build_dataloaders
+from emg15_model import EMGNet15
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train a transformer EMG recogniser")
+    parser = argparse.ArgumentParser(description="Train a 15-channel EMG recogniser")
     parser.add_argument("--dataset-root", type=str, required=True, help="Path to the dataset root (Train/Val/Test folders)")
     parser.add_argument("--num-classes", type=int, default=101, help="Number of target classes")
     parser.add_argument("--batch-size", type=int, default=48, help="Mini-batch size")
@@ -37,11 +37,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-grad-norm", type=float, default=1.0, help="Gradient clipping value (<=0 disables)")
     parser.add_argument("--lr-patience", type=int, default=8, help="ReduceLROnPlateau patience in epochs")
     parser.add_argument("--in-channels", type=int, default=15, help="Number of input channels")
-    parser.add_argument("--embed-dim", type=int, default=256, help="Transformer embedding dimension")
-    parser.add_argument("--num-heads", type=int, default=4, help="Number of attention heads")
-    parser.add_argument("--ff-dim", type=int, default=512, help="Transformer feed-forward dimension")
-    parser.add_argument("--layers", type=int, default=4, help="Transformer encoder layers")
-    parser.add_argument("--dropout", type=float, default=0.1, help="Dropout applied in the encoder")
+    parser.add_argument("--proj-dim", type=int, default=256, help="Projection dimension before the GRU")
+    parser.add_argument("--gru-hidden", type=int, default=512, help="GRU hidden size")
+    parser.add_argument("--gru-layers", type=int, default=2, help="Number of GRU layers")
+    parser.add_argument("--gru-dropout", type=float, default=0.3, help="Dropout inside the GRU stack")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="Preferred device")
     return parser.parse_args()
 
@@ -81,7 +80,7 @@ def get_dataset_size(loader: torch.utils.data.DataLoader) -> int | None:
 
 
 def run_epoch(
-    model: EMGTransformer15,
+    model: EMGNet15,
     loader: torch.utils.data.DataLoader,
     criterion: nn.Module,
     device: torch.device,
@@ -190,15 +189,14 @@ def train_and_evaluate(args: argparse.Namespace) -> None:
     val_size = get_dataset_size(loaders["val"])
     test_size = get_dataset_size(loaders["test"])
 
-    model = EMGTransformer15(
+    model = EMGNet15(
         num_classes=args.num_classes,
         in_channels=args.in_channels,
-        embed_dim=args.embed_dim,
-        num_heads=args.num_heads,
-        ff_dim=args.ff_dim,
-        num_layers=args.layers,
-        dropout=args.dropout,
+        proj_dim=args.proj_dim,
+        gru_hidden=args.gru_hidden,
+        gru_layers=args.gru_layers,
         every_frame=args.every_frame,
+        gru_dropout=args.gru_dropout,
     ).to(device)
 
     criterion = nn.CrossEntropyLoss()
@@ -345,6 +343,7 @@ def train_and_evaluate(args: argparse.Namespace) -> None:
     )
     print(f"Test set: loss={test_loss:.4f}, acc={test_acc:.4f}", flush=True)
 
+    # Persist training history for later analysis
     history_path = Path(args.save_dir) / "history.json"
     with open(history_path, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2)
